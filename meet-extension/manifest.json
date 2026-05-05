@@ -1,0 +1,30 @@
+{
+  "manifest_version": 3,
+  "name": "Gemini AI Consultant for Google Meet",
+  "version": "1.0",
+  "description": "Injects an AI Consultant into your Google Meetings that everyone can hear.",
+  "permissions": ["storage"],
+  "host_permissions": ["https://meet.google.com/*"],
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://meet.google.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://meet.google.com/*"],
+      "js": ["interceptor.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["audio-worklet-processor.js"],
+      "matches": ["https://meet.google.com/*"]
+    }
+  ]
+}

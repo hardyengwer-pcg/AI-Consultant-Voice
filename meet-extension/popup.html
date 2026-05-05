@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body {
+      width: 320px;
+      font-family: 'Inter', sans-serif;
+      padding: 16px;
+      background: #0f172a;
+      color: #f8fafc;
+      margin: 0;
+    }
+    h2 {
+      margin-top: 0;
+      font-size: 1.2rem;
+      background: linear-gradient(to right, #60a5fa, #a78bfa);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .input-group {
+      margin-bottom: 16px;
+    }
+    label {
+      display: block;
+      margin-bottom: 4px;
+      font-size: 0.85rem;
+      color: #94a3b8;
+    }
+    input[type="password"] {
+      width: 100%;
+      padding: 8px;
+      border-radius: 4px;
+      border: 1px solid rgba(255,255,255,0.2);
+      background: rgba(0,0,0,0.3);
+      color: white;
+      box-sizing: border-box;
+    }
+    button {
+      width: 100%;
+      padding: 10px;
+      border: none;
+      border-radius: 8px;
+      background: #3b82f6;
+      color: white;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s;
+      margin-bottom: 8px;
+    }
+    button:hover {
+      background: #2563eb;
+    }
+    #status {
+      font-size: 0.85rem;
+      color: #22c55e;
+      text-align: center;
+      min-height: 20px;
+    }
+  </style>
+</head>
+<body>
+  <h2>AI Consultant</h2>
+  <div class="input-group">
+    <label>Gemini API Key</label>
+    <input type="password" id="apiKey" placeholder="AIzaSy...">
+  </div>
+  <button id="saveBtn">Save Key</button>
+  <button id="activateBtn" style="background: #22c55e;">Activate in Google Meet</button>
+  <div id="status"></div>
+  <script src="popup.js"></script>
+</body>
+</html>
