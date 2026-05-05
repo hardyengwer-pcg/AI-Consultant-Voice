@@ -9,6 +9,7 @@ let workletNode;
 let geminiClient;
 let extensionWorkletUrl = null;
 let isConsultantActive = false;
+let isMuted = false;
 
 // 1. Intercept getUserMedia
 navigator.mediaDevices.getUserMedia = async function(constraints) {
@@ -54,7 +55,7 @@ async function setupWorklet() {
     
     let chunkCount = 0;
     workletNode.port.onmessage = (event) => {
-      if (!isConsultantActive || !geminiClient) return;
+      if (!isConsultantActive || !geminiClient || isMuted) return;
       const base64Audio = arrayBufferToBase64(event.data.buffer);
       geminiClient.sendAudioChunk(base64Audio);
       chunkCount++;
@@ -204,16 +205,22 @@ window.addEventListener('message', (event) => {
       setupWorklet();
     }
   } else if (event.data && event.data.type === 'TOGGLE_CONSULTANT') {
-    if (isConsultantActive) {
+    const shouldBeActive = event.data.forceState;
+    if (isConsultantActive && !shouldBeActive) {
       if (geminiClient) geminiClient.disconnect();
       isConsultantActive = false;
+      isMuted = false; // reset mute state
       console.log("AI Consultant deactivated.");
-    } else {
+    } else if (!isConsultantActive && shouldBeActive) {
       console.log("Activating AI Consultant...");
       isConsultantActive = true;
+      isMuted = false; // reset mute state
       geminiClient = new GeminiLiveClient(event.data.apiKey);
       geminiClient.connect();
     }
+  } else if (event.data && event.data.type === 'SET_MUTE') {
+    isMuted = event.data.isMuted;
+    console.log("AI Consultant mute state set to:", isMuted ? "MUTED" : "LISTENING");
   }
 });
 

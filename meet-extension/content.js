@@ -18,10 +18,40 @@ badge.style.fontWeight = 'bold';
 badge.style.zIndex = '999999';
 badge.style.display = 'none';
 badge.style.boxShadow = '0 4px 12px rgba(0,0,0,0.2)';
-badge.textContent = 'AI Consultant: Active 🎙️';
+badge.style.cursor = 'pointer';
+badge.style.transition = 'all 0.2s ease';
+badge.textContent = 'AI Consultant: Listening 🎙️';
 document.body.appendChild(badge);
 
+// Hover effect
+badge.addEventListener('mouseenter', () => { badge.style.transform = 'scale(1.05)'; });
+badge.addEventListener('mouseleave', () => { badge.style.transform = 'scale(1)'; });
+
 let isActive = false;
+let isMuted = false;
+
+function updateBadgeState() {
+  if (isActive) {
+    badge.style.display = 'block';
+    if (isMuted) {
+      badge.style.background = '#f59e0b'; // Amber color for muted
+      badge.textContent = 'AI Consultant: Muted 🔇';
+    } else {
+      badge.style.background = '#22c55e'; // Green for listening
+      badge.textContent = 'AI Consultant: Listening 🎙️';
+    }
+  } else {
+    badge.style.display = 'none';
+  }
+}
+
+// Click to mute/unmute
+badge.addEventListener('click', () => {
+  if (!isActive) return;
+  isMuted = !isMuted;
+  updateBadgeState();
+  window.postMessage({ type: 'SET_MUTE', isMuted: isMuted }, '*');
+});
 
 // Send initial setup info to MAIN world unconditionally
 // (interceptor.js runs at document_start, so its listener is already active)
@@ -51,7 +81,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     chrome.storage.local.get(['geminiApiKey'], (result) => {
       if (result.geminiApiKey) {
         isActive = !isActive;
-        badge.style.display = isActive ? 'block' : 'none';
+        // Reset mute state when activating
+        if (isActive) isMuted = false;
+        updateBadgeState();
         
         // Bridge the command to the MAIN world script
         window.postMessage({
