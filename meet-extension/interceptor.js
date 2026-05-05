@@ -31,6 +31,10 @@ navigator.mediaDevices.getUserMedia = async function(constraints) {
     // Setup worklet if we have the URL
     if (extensionWorkletUrl && !workletNode) {
       await setupWorklet();
+    } else if (workletNode) {
+      // If workletNode already exists (e.g., user switched mic in Meet settings),
+      // we must connect the new microphone source to the existing workletNode!
+      realMicSource.connect(workletNode);
     }
     
     // Return a new stream containing the original video track (if any) and our custom audio track
@@ -45,6 +49,23 @@ navigator.mediaDevices.getUserMedia = async function(constraints) {
   
   return stream;
 };
+
+// 2. Intercept setSinkId to follow Google Meet's speaker selection
+const originalSetSinkId = HTMLMediaElement.prototype.setSinkId;
+if (originalSetSinkId) {
+  HTMLMediaElement.prototype.setSinkId = async function(sinkId) {
+    console.log("Google Meet changed speaker to:", sinkId);
+    if (audioContext && typeof audioContext.setSinkId === 'function') {
+      try {
+        await audioContext.setSinkId(sinkId);
+        console.log("AI Consultant speaker updated to match Google Meet.");
+      } catch (err) {
+        console.error("Failed to sync AI Consultant speaker:", err);
+      }
+    }
+    return originalSetSinkId.apply(this, arguments);
+  };
+}
 
 async function setupWorklet() {
   if (!audioContext || !extensionWorkletUrl) return;
