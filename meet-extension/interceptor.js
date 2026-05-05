@@ -6,7 +6,7 @@ let audioContext;
 let meetDestination;
 let realMicSource;
 let workletNode;
-let geminiClient;
+let securePort = null;
 let extensionWorkletUrl = null;
 let isConsultantActive = false;
 let isMuted = false;
@@ -55,12 +55,12 @@ async function setupWorklet() {
     
     let chunkCount = 0;
     workletNode.port.onmessage = (event) => {
-      if (!isConsultantActive || !geminiClient || isMuted) return;
+      if (!isConsultantActive || isMuted || !securePort) return;
       const base64Audio = arrayBufferToBase64(event.data.buffer);
-      geminiClient.sendAudioChunk(base64Audio);
+      securePort.postMessage({ type: 'MIC_AUDIO', data: base64Audio });
       chunkCount++;
       if (chunkCount % 50 === 0) {
-        console.log("Sent 50 audio chunks to Gemini...");
+        // console.log("Sent 50 audio chunks via secure port...");
       }
     };
     
@@ -80,83 +80,6 @@ function arrayBufferToBase64(buffer) {
     binary += String.fromCharCode(bytes[i]);
   }
   return btoa(binary);
-}
-
-// ... Gemini Client Class ...
-class GeminiLiveClient {
-  constructor(apiKey) {
-    this.apiKey = apiKey;
-    this.ws = null;
-    this.model = "models/gemini-3.1-flash-live-preview";
-  }
-
-  connect() {
-    const url = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=${this.apiKey}`;
-    this.ws = new WebSocket(url);
-    this.ws.onopen = () => {
-      console.log("Connected to Gemini API.");
-      this.sendSetup();
-    };
-    this.ws.onmessage = async (event) => {
-      let text = event.data;
-      if (text instanceof Blob) {
-        text = await text.text();
-      }
-      this.handleMessage(JSON.parse(text));
-    };
-    this.ws.onclose = (e) => {
-      console.log("Consultant disconnected", e.code, e.reason);
-      isConsultantActive = false;
-    };
-  }
-
-  disconnect() {
-    if (this.ws) {
-      this.ws.close();
-      this.ws = null;
-    }
-  }
-
-  sendSetup() {
-    const setupMsg = {
-      setup: {
-        model: this.model,
-        generationConfig: {
-          responseModalities: ["AUDIO"],
-          speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Zephyr" } } }
-        },
-        systemInstruction: {
-          parts: [{ text: "You act as a AI Solution Consultant for AWS, Google Cloud Plattform and Azure, this includes a rich array of AI educational resources, courses, and practical applications. Begin with asking about the company and the szenario. Keep your answers concise and do not use emoticons." }]
-        }
-      }
-    };
-    this.ws.send(JSON.stringify(setupMsg));
-  }
-
-  sendAudioChunk(base64Pcm) {
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
-    const msg = { realtimeInput: { audio: { mimeType: "audio/pcm;rate=16000", data: base64Pcm } } };
-    this.ws.send(JSON.stringify(msg));
-  }
-
-  handleMessage(data) {
-    if (data.serverContent && data.serverContent.modelTurn) {
-      const parts = data.serverContent.modelTurn.parts;
-      for (const part of parts) {
-        if (part.inlineData && part.inlineData.data) {
-          console.log("Received audio response from Gemini!");
-          playAudio(part.inlineData.data);
-        }
-        if (part.text) {
-          console.log("Gemini text:", part.text);
-        }
-      }
-    } else if (data.serverContent && data.serverContent.interrupted) {
-      console.log("Gemini interrupted.");
-    } else {
-      // console.log("Other message from Gemini:", data);
-    }
-  }
 }
 
 let nextPlayTime = 0;
@@ -204,23 +127,19 @@ window.addEventListener('message', (event) => {
     if (audioContext && !workletNode) {
       setupWorklet();
     }
-  } else if (event.data && event.data.type === 'TOGGLE_CONSULTANT') {
-    const shouldBeActive = event.data.forceState;
-    if (isConsultantActive && !shouldBeActive) {
-      if (geminiClient) geminiClient.disconnect();
-      isConsultantActive = false;
-      isMuted = false; // reset mute state
-      console.log("AI Consultant deactivated.");
-    } else if (!isConsultantActive && shouldBeActive) {
-      console.log("Activating AI Consultant...");
-      isConsultantActive = true;
-      isMuted = false; // reset mute state
-      geminiClient = new GeminiLiveClient(event.data.apiKey);
-      geminiClient.connect();
-    }
-  } else if (event.data && event.data.type === 'SET_MUTE') {
-    isMuted = event.data.isMuted;
-    console.log("AI Consultant mute state set to:", isMuted ? "MUTED" : "LISTENING");
+  } else if (event.data && event.data.type === 'INIT_SECURE_CHANNEL') {
+    securePort = event.ports[0];
+    securePort.onmessage = (msgEvent) => {
+      const data = msgEvent.data;
+      if (data.type === 'PLAY_AUDIO') {
+        playAudio(data.base64Pcm);
+      } else if (data.type === 'TOGGLE_STATE') {
+        isConsultantActive = data.isActive;
+        isMuted = data.isMuted;
+        console.log("Interceptor state updated: Active=", isConsultantActive, "Muted=", isMuted);
+      }
+    };
+    console.log("Secure channel established with isolated world.");
   }
 });
 

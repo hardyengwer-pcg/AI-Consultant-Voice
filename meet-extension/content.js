@@ -29,6 +29,90 @@ badge.addEventListener('mouseleave', () => { badge.style.transform = 'scale(1)';
 
 let isActive = false;
 let isMuted = false;
+let geminiClient = null;
+let securePort = null;
+
+// Initialize secure MessageChannel
+const channel = new MessageChannel();
+securePort = channel.port1;
+securePort.onmessage = (event) => {
+  if (event.data.type === 'MIC_AUDIO' && geminiClient) {
+    geminiClient.sendAudioChunk(event.data.data);
+  }
+};
+window.postMessage({ type: 'INIT_SECURE_CHANNEL' }, '*', [channel.port2]);
+
+// ... Gemini Client Class ...
+class GeminiLiveClient {
+  constructor(apiKey) {
+    this.apiKey = apiKey;
+    this.ws = null;
+    this.model = "models/gemini-3.1-flash-live-preview";
+  }
+
+  connect() {
+    const url = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=${this.apiKey}`;
+    this.ws = new WebSocket(url);
+    this.ws.onopen = () => {
+      console.log("[Secure World] Connected to Gemini API.");
+      this.sendSetup();
+    };
+    this.ws.onmessage = async (event) => {
+      let text = event.data;
+      if (text instanceof Blob) {
+        text = await text.text();
+      }
+      this.handleMessage(JSON.parse(text));
+    };
+    this.ws.onclose = (e) => {
+      console.log("[Secure World] Consultant disconnected", e.code, e.reason);
+      isActive = false;
+      updateBadgeState();
+    };
+  }
+
+  disconnect() {
+    if (this.ws) {
+      this.ws.close();
+      this.ws = null;
+    }
+  }
+
+  sendSetup() {
+    const setupMsg = {
+      setup: {
+        model: this.model,
+        generationConfig: {
+          responseModalities: ["AUDIO"],
+          speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Zephyr" } } }
+        },
+        systemInstruction: {
+          parts: [{ text: "You act as a AI Solution Consultant for AWS, Google Cloud Plattform and Azure, this includes a rich array of AI educational resources, courses, and practical applications. Begin with asking about the company and the szenario. Keep your answers concise and do not use emoticons." }]
+        }
+      }
+    };
+    this.ws.send(JSON.stringify(setupMsg));
+  }
+
+  sendAudioChunk(base64Pcm) {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+    const msg = { realtimeInput: { audio: { mimeType: "audio/pcm;rate=16000", data: base64Pcm } } };
+    this.ws.send(JSON.stringify(msg));
+  }
+
+  handleMessage(data) {
+    if (data.serverContent && data.serverContent.modelTurn) {
+      const parts = data.serverContent.modelTurn.parts;
+      for (const part of parts) {
+        if (part.inlineData && part.inlineData.data) {
+          if (securePort) {
+            securePort.postMessage({ type: 'PLAY_AUDIO', base64Pcm: part.inlineData.data });
+          }
+        }
+      }
+    }
+  }
+}
 
 function updateBadgeState() {
   if (isActive) {
@@ -43,6 +127,9 @@ function updateBadgeState() {
   } else {
     badge.style.display = 'none';
   }
+  if (securePort) {
+    securePort.postMessage({ type: 'TOGGLE_STATE', isActive: isActive, isMuted: isMuted });
+  }
 }
 
 // Click to mute/unmute
@@ -50,7 +137,6 @@ badge.addEventListener('click', () => {
   if (!isActive) return;
   isMuted = !isMuted;
   updateBadgeState();
-  window.postMessage({ type: 'SET_MUTE', isMuted: isMuted }, '*');
 });
 
 // Send initial setup info to MAIN world unconditionally
@@ -68,6 +154,7 @@ window.addEventListener('message', (event) => {
       type: 'EXTENSION_INIT',
       workletUrl: workletUrl
     }, '*');
+    window.postMessage({ type: 'INIT_SECURE_CHANNEL' }, '*', [channel.port2]);
   }
 });
 
@@ -82,15 +169,15 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       if (result.geminiApiKey) {
         isActive = !isActive;
         // Reset mute state when activating
-        if (isActive) isMuted = false;
+        if (isActive) {
+          isMuted = false;
+          geminiClient = new GeminiLiveClient(result.geminiApiKey);
+          geminiClient.connect();
+        } else {
+          if (geminiClient) geminiClient.disconnect();
+          geminiClient = null;
+        }
         updateBadgeState();
-        
-        // Bridge the command to the MAIN world script
-        window.postMessage({
-          type: 'TOGGLE_CONSULTANT',
-          apiKey: result.geminiApiKey,
-          forceState: isActive
-        }, '*');
         sendResponse({ status: 'ok', isActive: isActive });
       } else {
         alert("Please set your Gemini API Key in the extension popup first.");
