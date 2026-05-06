@@ -11,6 +11,7 @@ let securePort = null;
 let extensionWorkletUrl = null;
 let isConsultantActive = false;
 let isMuted = false;
+let currentSinkId = null;
 
 // 1. Intercept getUserMedia
 navigator.mediaDevices.getUserMedia = async function(constraints) {
@@ -56,6 +57,10 @@ navigator.mediaDevices.getUserMedia = async function(constraints) {
 const originalSetSinkId = HTMLMediaElement.prototype.setSinkId;
 if (originalSetSinkId) {
   HTMLMediaElement.prototype.setSinkId = async function(sinkId) {
+    if (sinkId === currentSinkId) {
+      return originalSetSinkId.apply(this, arguments);
+    }
+    currentSinkId = sinkId;
     console.log("Google Meet changed speaker to:", sinkId);
     if (meetContext && typeof meetContext.setSinkId === 'function') {
       try {
