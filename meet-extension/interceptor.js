@@ -2,7 +2,8 @@
 // Runs in the MAIN world, overriding `getUserMedia`
 
 let originalGetUserMedia = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
-let audioContext;
+let meetContext;
+let geminiContext;
 let meetDestination;
 let realMicSource;
 let workletNode;
@@ -17,24 +18,25 @@ navigator.mediaDevices.getUserMedia = async function(constraints) {
   
   if (constraints.audio) {
     // We only intercept the audio stream
-    if (!audioContext) {
-      audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+    if (!meetContext) {
+      meetContext = new (window.AudioContext || window.webkitAudioContext)(); // Default rate for Meet
+      geminiContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 }); // 16kHz for Gemini
     }
     
     // Create a destination node that we will give to Google Meet
-    meetDestination = audioContext.createMediaStreamDestination();
+    meetDestination = meetContext.createMediaStreamDestination();
     
     // Connect the real mic to the destination so Meet still hears the user
-    realMicSource = audioContext.createMediaStreamSource(stream);
+    realMicSource = meetContext.createMediaStreamSource(stream);
     realMicSource.connect(meetDestination);
     
     // Setup worklet if we have the URL
     if (extensionWorkletUrl && !workletNode) {
-      await setupWorklet();
+      await setupWorklet(stream);
     } else if (workletNode) {
-      // If workletNode already exists (e.g., user switched mic in Meet settings),
-      // we must connect the new microphone source to the existing workletNode!
-      realMicSource.connect(workletNode);
+      // If workletNode already exists, connect new mic to Gemini worklet
+      const geminiMicSource = geminiContext.createMediaStreamSource(stream);
+      geminiMicSource.connect(workletNode);
     }
     
     // Return a new stream containing the original video track (if any) and our custom audio track
@@ -55,9 +57,9 @@ const originalSetSinkId = HTMLMediaElement.prototype.setSinkId;
 if (originalSetSinkId) {
   HTMLMediaElement.prototype.setSinkId = async function(sinkId) {
     console.log("Google Meet changed speaker to:", sinkId);
-    if (audioContext && typeof audioContext.setSinkId === 'function') {
+    if (meetContext && typeof meetContext.setSinkId === 'function') {
       try {
-        await audioContext.setSinkId(sinkId);
+        await meetContext.setSinkId(sinkId);
         console.log("AI Consultant speaker updated to match Google Meet.");
       } catch (err) {
         console.error("Failed to sync AI Consultant speaker:", err);
@@ -67,12 +69,12 @@ if (originalSetSinkId) {
   };
 }
 
-async function setupWorklet() {
-  if (!audioContext || !extensionWorkletUrl) return;
+async function setupWorklet(stream) {
+  if (!geminiContext || !extensionWorkletUrl) return;
   try {
     console.log("Setting up AudioWorklet with URL:", extensionWorkletUrl);
-    await audioContext.audioWorklet.addModule(extensionWorkletUrl);
-    workletNode = new AudioWorkletNode(audioContext, 'audio-recorder-processor');
+    await geminiContext.audioWorklet.addModule(extensionWorkletUrl);
+    workletNode = new AudioWorkletNode(geminiContext, 'audio-recorder-processor');
     
     let chunkCount = 0;
     workletNode.port.onmessage = (event) => {
@@ -85,8 +87,9 @@ async function setupWorklet() {
       }
     };
     
-    realMicSource.connect(workletNode);
-    workletNode.connect(audioContext.destination);
+    const geminiMicSource = geminiContext.createMediaStreamSource(stream);
+    geminiMicSource.connect(workletNode);
+    workletNode.connect(geminiContext.destination);
     console.log("AudioWorklet setup successful!");
   } catch (err) {
     console.error("Failed to setup AudioWorklet (possibly CSP issue):", err);
@@ -105,7 +108,7 @@ function arrayBufferToBase64(buffer) {
 
 let nextPlayTime = 0;
 function playAudio(base64Pcm) {
-  if (!audioContext) return;
+  if (!meetContext) return;
   
   const binaryString = atob(base64Pcm);
   const bytes = new Uint8Array(binaryString.length);
@@ -119,23 +122,23 @@ function playAudio(base64Pcm) {
     float32Array[i] = int16Array[i] / 32768.0;
   }
 
-  // Gemini returns 24kHz audio
-  const audioBuffer = audioContext.createBuffer(1, float32Array.length, 24000);
+  // Gemini returns 24kHz audio. We decode it into meetContext which runs at default rate (e.g. 48kHz).
+  const audioBuffer = meetContext.createBuffer(1, float32Array.length, 24000);
   audioBuffer.getChannelData(0).set(float32Array);
 
-  const source = audioContext.createBufferSource();
+  const source = meetContext.createBufferSource();
   source.buffer = audioBuffer;
   
   // Connect to local speakers so YOU can hear it
-  source.connect(audioContext.destination);
+  source.connect(meetContext.destination);
   
   // Connect to meetDestination so OTHERS can hear it (Option B magic)
   if (meetDestination) {
     source.connect(meetDestination);
   }
 
-  if (nextPlayTime < audioContext.currentTime) {
-    nextPlayTime = audioContext.currentTime;
+  if (nextPlayTime < meetContext.currentTime) {
+    nextPlayTime = meetContext.currentTime;
   }
   source.start(nextPlayTime);
   nextPlayTime += audioBuffer.duration;
@@ -145,9 +148,7 @@ function playAudio(base64Pcm) {
 window.addEventListener('message', (event) => {
   if (event.data && event.data.type === 'EXTENSION_INIT') {
     extensionWorkletUrl = event.data.workletUrl;
-    if (audioContext && !workletNode) {
-      setupWorklet();
-    }
+    // We only call setupWorklet when getUserMedia is called and stream is available.
   } else if (event.data && event.data.type === 'INIT_SECURE_CHANNEL') {
     securePort = event.ports[0];
     securePort.onmessage = (msgEvent) => {
