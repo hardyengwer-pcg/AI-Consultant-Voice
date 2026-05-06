@@ -32,7 +32,23 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   activateBtn.addEventListener('click', () => {
-    // Send message to the active tab to start/stop the consultant
+    // 1. Trigger AudioContext resume in the MAIN world (user gesture)
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      if (tabs.length && tabs[0].url.includes('meet.google.com')) {
+        chrome.scripting.executeScript({
+          target: { tabId: tabs[0].id },
+          func: () => {
+            // This runs in the MAIN world where interceptor.js created the AudioContext
+            if (window.meetGemini && typeof window.meetGemini.resume === 'function') {
+              window.meetGemini.resume();
+            }
+          },
+          world: 'MAIN'
+        });
+      }
+    });
+
+    // 2. Send message to the active tab to start/stop the consultant
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       if (tabs.length === 0 || !tabs[0].url.includes('meet.google.com')) {
         statusDiv.textContent = 'Please open Google Meet first!';

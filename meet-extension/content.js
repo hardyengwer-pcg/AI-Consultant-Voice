@@ -70,9 +70,17 @@ class GeminiLiveClient {
     };
     this.ws.onclose = (e) => {
       console.log("[Secure World] Consultant disconnected", e.code, e.reason);
+      if (this.heartbeatInterval) clearInterval(this.heartbeatInterval);
       isActive = false;
       updateBadgeState();
     };
+
+    // Heartbeat to keep connection alive during silence
+    this.heartbeatInterval = setInterval(() => {
+      if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+        this.sendAudioChunk(""); // Send empty data to keep pipe open
+      }
+    }, 20000); // Every 20s
   }
 
   disconnect() {

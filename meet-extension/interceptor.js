@@ -22,6 +22,9 @@ navigator.mediaDevices.getUserMedia = async function(constraints) {
     if (!meetContext) {
       meetContext = new (window.AudioContext || window.webkitAudioContext)(); // Default rate for Meet
       geminiContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 }); // 16kHz for Gemini
+      // Immediately resume contexts (user gesture will have triggered extension activation)
+      meetContext.resume().catch(()=>{});
+      geminiContext.resume().catch(()=>{});
     }
     
     // Create a destination node that we will give to Google Meet
@@ -142,8 +145,10 @@ function playAudio(base64Pcm) {
     source.connect(meetDestination);
   }
 
-  if (nextPlayTime < meetContext.currentTime) {
-    nextPlayTime = meetContext.currentTime;
+  // Add a tiny look-ahead safety margin (10ms) to prevent gaps
+  const safetyMargin = 0.01;
+  if (nextPlayTime < meetContext.currentTime + safetyMargin) {
+    nextPlayTime = meetContext.currentTime + safetyMargin;
   }
   source.start(nextPlayTime);
   nextPlayTime += audioBuffer.duration;
@@ -164,11 +169,29 @@ window.addEventListener('message', (event) => {
         isConsultantActive = data.isActive;
         isMuted = data.isMuted;
         console.log("Interceptor state updated: Active=", isConsultantActive, "Muted=", isMuted);
-      }
+        // Attempt to resume AudioContexts after a user gesture (toggle button click)
+        if (meetContext) {
+          meetContext.resume().catch(() => {});
+        }
+        if (geminiContext) {
+          geminiContext.resume().catch(() => {});
+        }      }
     };
     console.log("Secure channel established with isolated world.");
   }
 });
+
+// Expose helper for popup to resume AudioContext after user gesture
+window.meetGemini = {
+  resume: () => {
+    if (meetContext && meetContext.state === 'suspended') {
+      meetContext.resume().then(() => console.log('[Interceptor] meetContext resumed via user gesture'));
+    }
+    if (geminiContext && geminiContext.state === 'suspended') {
+      geminiContext.resume().then(() => console.log('[Interceptor] geminiContext resumed via user gesture'));
+    }
+  }
+};
 
 // Announce we are ready
 window.postMessage({ type: 'INTERCEPTOR_READY' }, '*');
