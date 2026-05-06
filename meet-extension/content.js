@@ -47,7 +47,7 @@ class GeminiLiveClient {
   constructor(apiKey) {
     this.apiKey = apiKey;
     this.ws = null;
-    this.model = "models/gemini-2.0-flash-exp";
+    this.model = "models/gemini-3.1-flash-live-preview";
   }
 
   connect() {
