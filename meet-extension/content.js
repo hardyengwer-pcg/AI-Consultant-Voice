@@ -47,12 +47,16 @@ class GeminiLiveClient {
   constructor(apiKey) {
     this.apiKey = apiKey;
     this.ws = null;
-    this.model = "models/gemini-3.1-flash-live-preview";
+    this.model = "models/gemini-2.0-flash-exp";
   }
 
   connect() {
-    const url = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=${this.apiKey}`;
-    this.ws = new WebSocket(url);
+    const baseUrl = "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent";
+    const url = new URL(baseUrl);
+    url.searchParams.set('key', this.apiKey);
+    
+    console.log("[Secure World] Connecting to Gemini API...");
+    this.ws = new WebSocket(url.toString());
     this.ws.onopen = () => {
       console.log("[Secure World] Connected to Gemini API.");
       this.sendSetup();
