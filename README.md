@@ -1,5 +1,12 @@
 # Gemini AI Consultant for Google Meet
 
+---
+
+> [!NOTE]
+> Dieses Projekt wurde mit Unterstützung von KI (Google Gemini) erstellt.
+
+---
+
 This Chrome Extension seamlessly integrates Google's Gemini Multimodal Live API directly into your Google Meet sessions. 
 
 The AI Consultant joins your meeting as an invisible participant that **everyone can hear**. It listens to your microphone, processes the conversation using Gemini, and speaks its answers directly into the active Google Meet so that all participants can hear the AI's response in real-time.
